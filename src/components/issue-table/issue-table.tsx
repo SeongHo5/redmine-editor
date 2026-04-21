@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import {
   Table,
   TableBody,
@@ -53,7 +54,7 @@ export function IssueTable({
   if (issues.length === 0) {
     return (
       <div className="rounded-md border p-10 text-center text-sm text-muted-foreground">
-        할당된 열린 이슈가 없습니다.
+        조건에 맞는 이슈가 없습니다.
       </div>
     );
   }
@@ -133,6 +134,14 @@ function IssueRow({
   onFieldChange,
   onFocusRow,
 }: RowProps) {
+  const rowRef = useRef<HTMLTableRowElement>(null);
+
+  useEffect(() => {
+    if (focused) {
+      rowRef.current?.scrollIntoView({ block: "nearest" });
+    }
+  }, [focused]);
+
   const statusValue = effectiveValue(issue, dirty, "status_id");
   const priorityValue = effectiveValue(issue, dirty, "priority_id");
   const assignedValue = effectiveValue(issue, dirty, "assigned_to_id");
@@ -151,10 +160,11 @@ function IssueRow({
 
   return (
     <TableRow
+      ref={rowRef}
       data-issue-id={issue.id}
-      onMouseEnter={() => onFocusRow?.(issue.id)}
+      onClick={() => onFocusRow?.(issue.id)}
       className={cn(
-        focused && "bg-muted/40",
+        focused && "bg-muted/50 ring-1 ring-inset ring-ring/40",
         errors && "outline outline-2 -outline-offset-2 outline-destructive",
         successFlash &&
           "bg-emerald-50 transition-colors dark:bg-emerald-950/40",
@@ -217,4 +227,3 @@ function IssueRow({
     </TableRow>
   );
 }
-

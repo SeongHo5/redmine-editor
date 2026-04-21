@@ -1,9 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useIssues } from "@/hooks/use-issues";
 import { useMeta } from "@/hooks/use-meta";
 import {
@@ -11,6 +18,7 @@ import {
   type DirtyFieldKey,
   type DirtyValue,
 } from "@/hooks/use-dirty-issues";
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { useUpdateIssues } from "@/hooks/use-update-issues";
 import type { MetaResponse, RedmineIssue } from "@/lib/redmine/schemas";
 import { IssueTable } from "./issue-table";
@@ -70,9 +78,10 @@ function IssuesEditor({ issues, meta, isRefetching }: EditorProps) {
     [issues],
   );
 
-  const { dirty, setField, resetAll, removeIssues } =
+  const { dirty, setField, resetIssue, resetAll, removeIssues } =
     useDirtyIssues(issuesById);
   const [focusedId, setFocusedId] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
   const [errorMessages, setErrorMessages] = useState<Map<number, string[]>>(
     () => new Map(),
   );
@@ -80,6 +89,7 @@ function IssuesEditor({ issues, meta, isRefetching }: EditorProps) {
   const flashTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const timers = flashTimers.current;
@@ -88,6 +98,21 @@ function IssuesEditor({ issues, meta, isRefetching }: EditorProps) {
       timers.clear();
     };
   }, []);
+
+  const filteredIssues = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return issues;
+    return issues.filter(
+      (i) =>
+        i.subject.toLowerCase().includes(q) || String(i.id).includes(q),
+    );
+  }, [issues, search]);
+
+  useEffect(() => {
+    if (focusedId !== null && !filteredIssues.some((i) => i.id === focusedId)) {
+      setFocusedId(filteredIssues[0]?.id ?? null);
+    }
+  }, [filteredIssues, focusedId]);
 
   const assigneeOptions = useMemo(
     () => buildAssigneeOptions(issues, meta),
@@ -158,21 +183,73 @@ function IssuesEditor({ issues, meta, isRefetching }: EditorProps) {
     setErrorMessages(new Map());
   }, [resetAll]);
 
+  const moveFocus = useCallback(
+    (delta: 1 | -1) => {
+      if (filteredIssues.length === 0) return;
+      const idx =
+        focusedId === null
+          ? -1
+          : filteredIssues.findIndex((i) => i.id === focusedId);
+      let nextIdx: number;
+      if (idx === -1) {
+        nextIdx = delta === 1 ? 0 : filteredIssues.length - 1;
+      } else {
+        nextIdx = Math.min(
+          Math.max(idx + delta, 0),
+          filteredIssues.length - 1,
+        );
+      }
+      const next = filteredIssues[nextIdx];
+      if (next) setFocusedId(next.id);
+    },
+    [filteredIssues, focusedId],
+  );
+
+  const handleResetRow = useCallback(() => {
+    if (focusedId === null) return;
+    if (!dirty.has(focusedId)) return;
+    resetIssue(focusedId);
+    setErrorMessages((prev) => {
+      if (!prev.has(focusedId)) return prev;
+      const next = new Map(prev);
+      next.delete(focusedId);
+      return next;
+    });
+  }, [focusedId, dirty, resetIssue]);
+
+  useKeyboardShortcuts({
+    onNext: () => moveFocus(1),
+    onPrev: () => moveFocus(-1),
+    onResetRow: handleResetRow,
+    onFlush: handleFlush,
+    onFocusSearch: () => searchInputRef.current?.focus(),
+  });
+
   const dirtyCount = dirty.size;
 
   return (
     <div>
-      <div className="sticky top-0 z-20 -mx-6 mb-4 flex items-center justify-between gap-4 border-b bg-background/95 px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">변경된 이슈</span>
-          <Badge variant={dirtyCount > 0 ? "default" : "secondary"}>
-            {dirtyCount}건
-          </Badge>
-          {update.isPending && (
-            <span className="text-xs text-muted-foreground">반영 중…</span>
-          )}
+      <div className="sticky top-0 z-20 -mx-6 mb-4 flex flex-wrap items-center justify-between gap-3 border-b bg-background/95 px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="flex items-center gap-3">
+          <Input
+            ref={searchInputRef}
+            value={search}
+            onChange={(e) => setSearch(e.currentTarget.value)}
+            placeholder="제목/ID 검색 (/)"
+            className="h-8 w-[260px]"
+          />
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">변경됨</span>
+            <Badge variant={dirtyCount > 0 ? "default" : "secondary"}>
+              {dirtyCount}건
+            </Badge>
+            {update.isPending && (
+              <span className="text-xs text-muted-foreground">반영 중…</span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
+          <ShortcutHints />
           <Button
             variant="outline"
             size="sm"
@@ -191,7 +268,7 @@ function IssuesEditor({ issues, meta, isRefetching }: EditorProps) {
         </div>
       </div>
       <IssueTable
-        issues={issues}
+        issues={filteredIssues}
         meta={meta}
         dirty={dirty}
         assigneeOptions={assigneeOptions}
@@ -203,6 +280,27 @@ function IssuesEditor({ issues, meta, isRefetching }: EditorProps) {
         isRefetching={isRefetching}
       />
     </div>
+  );
+}
+
+function ShortcutHints() {
+  return (
+    <div className="hidden items-center gap-2 text-[11px] text-muted-foreground md:flex">
+      <Kbd>j</Kbd>/<Kbd>k</Kbd>
+      <span>이동</span>
+      <Kbd>r</Kbd>
+      <span>되돌리기</span>
+      <Kbd>⌘/Ctrl + Enter</Kbd>
+      <span>반영</span>
+    </div>
+  );
+}
+
+function Kbd({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">
+      {children}
+    </kbd>
   );
 }
 
