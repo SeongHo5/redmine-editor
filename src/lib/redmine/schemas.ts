@@ -152,5 +152,6 @@ export const MetaResponseSchema = z.object({
     id: z.number().int(),
     name: z.string(),
   }),
+  redmineBaseUrl: z.string().url(),
 });
 export type MetaResponse = z.infer<typeof MetaResponseSchema>;

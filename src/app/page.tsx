@@ -1,3 +1,5 @@
+import { IssuesView } from "@/components/issue-table/issues-view";
+
 export default function Home() {
   return (
     <main className="flex-1 px-6 py-10">
@@ -9,8 +11,8 @@ export default function Home() {
           내게 할당된 이슈를 한 화면에서 인라인으로 편집하고 일괄 반영합니다.
         </p>
       </header>
-      <section className="mx-auto mt-10 max-w-6xl rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
-        이슈 테이블은 다음 단계에서 연결됩니다.
+      <section className="mx-auto mt-8 max-w-6xl">
+        <IssuesView />
       </section>
     </main>
   );

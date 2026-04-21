@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { env } from "@/lib/env";
 import { redmineFetch } from "@/lib/redmine/client";
 import { toErrorResponse } from "@/lib/redmine/route-helpers";
 import {
@@ -37,6 +38,7 @@ export async function GET() {
       trackers: trackers.trackers,
       priorities: priorities.issue_priorities,
       currentUser: { id: user.id, name: displayName },
+      redmineBaseUrl: env.REDMINE_BASE_URL,
     });
     return NextResponse.json(body);
   } catch (err) {
