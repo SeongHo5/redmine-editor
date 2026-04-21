@@ -43,6 +43,12 @@ export function InlineSelect({
   disabled,
   ariaLabel,
 }: Props) {
+  const labelFor = (raw: string | null): string => {
+    const decoded = decode(raw);
+    const match = options.find((o) => o.id === decoded);
+    return match?.name ?? "(알 수 없음)";
+  };
+
   return (
     <Select
       value={encode(value)}
@@ -60,7 +66,9 @@ export function InlineSelect({
             "border-amber-400 bg-amber-50 text-amber-950 dark:bg-amber-950/40 dark:text-amber-100",
         )}
       >
-        <SelectValue />
+        <SelectValue>
+          {(raw: string | null) => labelFor(raw)}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         {options.map((opt) => (
