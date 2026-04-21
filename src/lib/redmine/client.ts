@@ -24,6 +24,13 @@ type RequestOptions = {
   body?: unknown;
   searchParams?: Record<string, string | number | boolean | undefined>;
   signal?: AbortSignal;
+  /**
+   * Opt into Next.js Data Cache with a revalidation window in seconds.
+   * Omit for mutations and responses that must always be fresh (cache: no-store).
+   */
+  revalidate?: number;
+  /** Optional cache tag(s) for targeted revalidatePath/revalidateTag. */
+  tags?: string[];
 };
 
 function buildUrl(
@@ -67,7 +74,12 @@ export async function redmineFetch<T>(
   const method = options.method ?? "GET";
   const hasBody = options.body !== undefined;
 
-  const res = await fetch(url, {
+  const useDataCache =
+    method === "GET" && typeof options.revalidate === "number";
+
+  const init: RequestInit & {
+    next?: { revalidate?: number; tags?: string[] };
+  } = {
     method,
     headers: {
       "X-Redmine-API-Key": env.REDMINE_API_KEY,
@@ -75,9 +87,19 @@ export async function redmineFetch<T>(
       ...(hasBody ? { "Content-Type": "application/json" } : {}),
     },
     body: hasBody ? JSON.stringify(options.body) : undefined,
-    cache: "no-store",
     signal: options.signal,
-  });
+  };
+
+  if (useDataCache) {
+    init.next = {
+      revalidate: options.revalidate,
+      ...(options.tags ? { tags: options.tags } : {}),
+    };
+  } else {
+    init.cache = "no-store";
+  }
+
+  const res = await fetch(url, init);
 
   if (!res.ok) {
     const errors = await parseErrorBody(res);

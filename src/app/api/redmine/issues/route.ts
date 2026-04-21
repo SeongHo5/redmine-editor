@@ -9,7 +9,6 @@ const DEFAULTS = {
   assigned_to_id: "me",
   status_id: "open",
   limit: "100",
-  include: "attachments",
 };
 
 export async function GET(req: NextRequest) {
@@ -25,7 +24,15 @@ export async function GET(req: NextRequest) {
       IssuesListResponseSchema,
       { searchParams },
     );
-    return NextResponse.json(data);
+    return NextResponse.json(data, {
+      headers: {
+        // Browser can reuse the response across quick refreshes while we
+        // revalidate in the background; TanStack Query still drives the
+        // actual freshness semantics in-app.
+        "Cache-Control":
+          "private, max-age=0, stale-while-revalidate=30",
+      },
+    });
   } catch (err) {
     return toErrorResponse(err);
   }
