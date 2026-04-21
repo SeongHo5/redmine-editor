@@ -1,7 +1,12 @@
 "use client";
 
+import { useMemo, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useIssues } from "@/hooks/use-issues";
 import { useMeta } from "@/hooks/use-meta";
+import { useDirtyIssues } from "@/hooks/use-dirty-issues";
+import type { MetaResponse, RedmineIssue } from "@/lib/redmine/schemas";
 import { IssueTable } from "./issue-table";
 
 export function IssuesView() {
@@ -37,12 +42,91 @@ export function IssuesView() {
   }
 
   return (
-    <IssueTable
+    <IssuesEditor
       issues={issues.data.issues}
       meta={meta.data}
       isRefetching={issues.isFetching}
     />
   );
+}
+
+type EditorProps = {
+  issues: RedmineIssue[];
+  meta: MetaResponse;
+  isRefetching: boolean;
+};
+
+function IssuesEditor({ issues, meta, isRefetching }: EditorProps) {
+  const issuesById = useMemo(
+    () => new Map(issues.map((i) => [i.id, i] as const)),
+    [issues],
+  );
+
+  const { dirty, setField, resetAll } = useDirtyIssues(issuesById);
+  const [focusedId, setFocusedId] = useState<number | null>(null);
+
+  const assigneeOptions = useMemo(
+    () => buildAssigneeOptions(issues, meta),
+    [issues, meta],
+  );
+
+  const dirtyCount = dirty.size;
+
+  return (
+    <div>
+      <div className="sticky top-0 z-20 -mx-6 mb-4 flex items-center justify-between gap-4 border-b bg-background/95 px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">변경된 이슈</span>
+          <Badge variant={dirtyCount > 0 ? "default" : "secondary"}>
+            {dirtyCount}건
+          </Badge>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={dirtyCount === 0}
+            onClick={resetAll}
+          >
+            되돌리기
+          </Button>
+          <Button size="sm" disabled={dirtyCount === 0}>
+            반영
+          </Button>
+        </div>
+      </div>
+      <IssueTable
+        issues={issues}
+        meta={meta}
+        dirty={dirty}
+        assigneeOptions={assigneeOptions}
+        focusedId={focusedId}
+        onFieldChange={setField}
+        onFocusRow={setFocusedId}
+        isRefetching={isRefetching}
+      />
+    </div>
+  );
+}
+
+function buildAssigneeOptions(
+  issues: RedmineIssue[],
+  meta: MetaResponse,
+): Array<{ id: number | null; name: string }> {
+  const seen = new Map<number, string>();
+  seen.set(meta.currentUser.id, `${meta.currentUser.name} (나)`);
+  for (const issue of issues) {
+    if (issue.assigned_to && !seen.has(issue.assigned_to.id)) {
+      seen.set(issue.assigned_to.id, issue.assigned_to.name);
+    }
+  }
+  const list: Array<{ id: number | null; name: string }> = [
+    { id: null, name: "(미지정)" },
+  ];
+  for (const [id, name] of seen) {
+    list.push({ id, name });
+  }
+  return list;
 }
 
 function ErrorPanel({

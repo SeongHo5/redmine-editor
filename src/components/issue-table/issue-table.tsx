@@ -1,6 +1,5 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -9,16 +8,48 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  effectiveValue,
+  originalValue,
+  type DirtyFieldKey,
+  type DirtyFields,
+  type DirtyMap,
+  type DirtyValue,
+} from "@/hooks/use-dirty-issues";
 import type { MetaResponse, RedmineIssue } from "@/lib/redmine/schemas";
+import { cn } from "@/lib/utils";
 import { formatDate, formatDateTime, issueUrl } from "./format";
+import { InlineSelect } from "./inline-select";
 
 type Props = {
   issues: RedmineIssue[];
   meta: MetaResponse;
+  dirty: DirtyMap;
+  assigneeOptions: Array<{ id: number | null; name: string }>;
+  focusedId: number | null;
+  errorMessages?: Map<number, string[]>;
+  successIds?: Set<number>;
+  onFieldChange: (
+    issueId: number,
+    field: DirtyFieldKey,
+    value: DirtyValue,
+  ) => void;
+  onFocusRow?: (issueId: number) => void;
   isRefetching?: boolean;
 };
 
-export function IssueTable({ issues, meta, isRefetching }: Props) {
+export function IssueTable({
+  issues,
+  meta,
+  dirty,
+  assigneeOptions,
+  focusedId,
+  errorMessages,
+  successIds,
+  onFieldChange,
+  onFocusRow,
+  isRefetching,
+}: Props) {
   if (issues.length === 0) {
     return (
       <div className="rounded-md border p-10 text-center text-sm text-muted-foreground">
@@ -55,40 +86,18 @@ export function IssueTable({ issues, meta, isRefetching }: Props) {
           </TableHeader>
           <TableBody>
             {issues.map((issue) => (
-              <TableRow key={issue.id}>
-                <TableCell className="font-mono text-xs">
-                  <a
-                    href={issueUrl(meta.redmineBaseUrl, issue.id)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-primary hover:underline"
-                  >
-                    #{issue.id}
-                  </a>
-                </TableCell>
-                <TableCell className="max-w-[480px] truncate" title={issue.subject}>
-                  {issue.subject}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {issue.project.name}
-                </TableCell>
-                <TableCell>{issue.tracker.name}</TableCell>
-                <TableCell>
-                  <Badge variant={issue.status.is_closed ? "secondary" : "outline"}>
-                    {issue.status.name}
-                  </Badge>
-                </TableCell>
-                <TableCell>{issue.priority.name}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {issue.assigned_to?.name ?? "-"}
-                </TableCell>
-                <TableCell className="font-mono text-xs">
-                  {formatDate(issue.due_date)}
-                </TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">
-                  {formatDateTime(issue.updated_on)}
-                </TableCell>
-              </TableRow>
+              <IssueRow
+                key={issue.id}
+                issue={issue}
+                meta={meta}
+                dirty={dirty.get(issue.id)}
+                assigneeOptions={assigneeOptions}
+                focused={focusedId === issue.id}
+                errors={errorMessages?.get(issue.id)}
+                successFlash={successIds?.has(issue.id) ?? false}
+                onFieldChange={onFieldChange}
+                onFocusRow={onFocusRow}
+              />
             ))}
           </TableBody>
         </Table>
@@ -96,3 +105,116 @@ export function IssueTable({ issues, meta, isRefetching }: Props) {
     </div>
   );
 }
+
+type RowProps = {
+  issue: RedmineIssue;
+  meta: MetaResponse;
+  dirty: DirtyFields | undefined;
+  assigneeOptions: Array<{ id: number | null; name: string }>;
+  focused: boolean;
+  errors: string[] | undefined;
+  successFlash: boolean;
+  onFieldChange: (
+    issueId: number,
+    field: DirtyFieldKey,
+    value: DirtyValue,
+  ) => void;
+  onFocusRow?: (issueId: number) => void;
+};
+
+function IssueRow({
+  issue,
+  meta,
+  dirty,
+  assigneeOptions,
+  focused,
+  errors,
+  successFlash,
+  onFieldChange,
+  onFocusRow,
+}: RowProps) {
+  const statusValue = effectiveValue(issue, dirty, "status_id");
+  const priorityValue = effectiveValue(issue, dirty, "priority_id");
+  const assignedValue = effectiveValue(issue, dirty, "assigned_to_id");
+
+  const isStatusDirty =
+    dirty?.status_id !== undefined &&
+    dirty.status_id !== originalValue(issue, "status_id");
+  const isPriorityDirty =
+    dirty?.priority_id !== undefined &&
+    dirty.priority_id !== originalValue(issue, "priority_id");
+  const isAssigneeDirty =
+    dirty?.assigned_to_id !== undefined &&
+    dirty.assigned_to_id !== originalValue(issue, "assigned_to_id");
+
+  const rowErrorTitle = errors?.join("\n");
+
+  return (
+    <TableRow
+      data-issue-id={issue.id}
+      onMouseEnter={() => onFocusRow?.(issue.id)}
+      className={cn(
+        focused && "bg-muted/40",
+        errors && "outline outline-2 -outline-offset-2 outline-destructive",
+        successFlash &&
+          "bg-emerald-50 transition-colors dark:bg-emerald-950/40",
+      )}
+    >
+      <TableCell className="font-mono text-xs">
+        <a
+          href={issueUrl(meta.redmineBaseUrl, issue.id)}
+          target="_blank"
+          rel="noreferrer"
+          className="text-primary hover:underline"
+          title={rowErrorTitle}
+        >
+          #{issue.id}
+        </a>
+      </TableCell>
+      <TableCell className="max-w-[480px] truncate" title={issue.subject}>
+        {issue.subject}
+      </TableCell>
+      <TableCell className="text-muted-foreground">
+        {issue.project.name}
+      </TableCell>
+      <TableCell>{issue.tracker.name}</TableCell>
+      <TableCell>
+        <InlineSelect
+          ariaLabel={`상태 #${issue.id}`}
+          value={(statusValue as number | null) ?? null}
+          isDirty={isStatusDirty}
+          options={meta.statuses.map((s) => ({
+            id: s.id,
+            name: s.is_closed ? `${s.name} (종료)` : s.name,
+          }))}
+          onChange={(v) => onFieldChange(issue.id, "status_id", v)}
+        />
+      </TableCell>
+      <TableCell>
+        <InlineSelect
+          ariaLabel={`우선순위 #${issue.id}`}
+          value={(priorityValue as number | null) ?? null}
+          isDirty={isPriorityDirty}
+          options={meta.priorities.map((p) => ({ id: p.id, name: p.name }))}
+          onChange={(v) => onFieldChange(issue.id, "priority_id", v)}
+        />
+      </TableCell>
+      <TableCell>
+        <InlineSelect
+          ariaLabel={`담당자 #${issue.id}`}
+          value={assignedValue as number | null}
+          isDirty={isAssigneeDirty}
+          options={assigneeOptions}
+          onChange={(v) => onFieldChange(issue.id, "assigned_to_id", v)}
+        />
+      </TableCell>
+      <TableCell className="font-mono text-xs">
+        {formatDate(issue.due_date)}
+      </TableCell>
+      <TableCell className="font-mono text-xs text-muted-foreground">
+        {formatDateTime(issue.updated_on)}
+      </TableCell>
+    </TableRow>
+  );
+}
+
